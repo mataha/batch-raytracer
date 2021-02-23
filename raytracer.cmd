@@ -20,6 +20,10 @@
 set PROGRAM=%~n0
 set VERSION=0.0.1-SNAPSHOT
 
+set /a DEFAULT_WIDTH=256
+set /a DEFAULT_HEIGHT=256
+set /a DEFAULT_PROCESSES=2
+
 goto :main
 
 
@@ -357,20 +361,12 @@ goto :main
 
     goto :EOF
 
-:init_options ()
-    set /a DEFAULT_WIDTH=256
-    set /a DEFAULT_HEIGHT=256
-    set /a DEFAULT_PROCESSES=2
-
+:: Loosely inspired by https://stackoverflow.com/a/8162578
+:parse (args...)
     set "OPTIONS=--width:%DEFAULT_WIDTH% --height:%DEFAULT_HEIGHT%"
     set "OPTIONS=%OPTIONS% --processes:%DEFAULT_PROCESSES% --worker-index:"""
     set "OPTIONS=%OPTIONS% -h: --help: -?: --version:"
 
-    goto :EOF
-
-:: Loosely inspired by https://stackoverflow.com/a/8162578
-:parse (args...)
-    call :init_options
     for %%o in (%OPTIONS%) do for /f "tokens=1,* delims=:" %%i in ("%%o") do set "%%i=%%~j"
 
     set UNRECOGNIZED=
@@ -397,6 +393,8 @@ goto :main
         )
 
         set test=
+
+    set OPTIONS=
 
     goto :EOF
 
@@ -427,7 +425,7 @@ goto :main
     echo:    Exit status:
     echo:      0                 successful program execution
     echo:      1                 this dialog was displayed
-    echo:      2                 arg error
+    echo:      2                 parse error
 
     exit /b 1
 
@@ -473,7 +471,7 @@ goto :main
     call :sqrt "x" "result"
     call :print result
 
-    call :to_fp 4 "x"
+    call :to_fp 123 "x"
     call :sqrt "x" "result"
     call :print result
 
