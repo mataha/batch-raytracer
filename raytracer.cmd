@@ -349,11 +349,11 @@ goto :main
     goto :EOF
 
 :init_constants ()
-    set /a SCALE_FACTOR=10000
+    set /a SCALE_FACTOR=1000
     call :len SCALE_FACTOR "FRACTION_DIGITS"
     set /a FRACTION_DIGITS-=1
 
-    set /a NEWTON_RAPHSON_ITERATIONS=4
+    set /a NEWTON_RAPHSON_ITERATIONS=5
     set IMAGINARY_UNIT=i
 
     call :to_fp 1.5 THREE_HALVES
