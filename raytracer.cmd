@@ -405,6 +405,15 @@ goto :main
 
     goto :EOF
 
+:temporary_directory (*directory)
+    @setlocal
+
+    set temporary=%TEMP%
+    if "%temporary%"=="" set temporary=.
+    for %%i in ("%temporary%") do set temporary=%%~fi
+
+    @endlocal & set "%~1=%temporary%" & goto :EOF
+
 :version
     echo:%VERSION%
 
