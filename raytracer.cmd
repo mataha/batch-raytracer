@@ -17,19 +17,36 @@
 ::
 @setlocal EnableDelayedExpansion EnableExtensions
 
-set PROGRAM=%~n0
-set VERSION=0.0.1-SNAPSHOT
+@set PROGRAM=%~n0
+@set VERSION=0.0.1-SNAPSHOT
 
-set /a DEFAULT_WIDTH=256
-set /a DEFAULT_HEIGHT=256
-set /a DEFAULT_PROCESSES=2
-
-goto :main
+@for /f "usebackq" %%c in (`@copy /z "%~f0" nul`) do @set CR=%%c
+@goto :main
 
 
-:: Shamelessly stolen from https://stackoverflow.com/a/5841587 (CC BY-SA 4.0)
-:len (*string, *result)
-    @setlocal EnableDelayedExpansion
+:: This could be probably relegated to IntelliJ IDEA batch utils, but... eh.
+:append (*string, element, *result, separator)
+    setlocal EnableDelayedExpansion
+
+    if not "%~4"=="" (
+        set "separator=%~4"
+    ) else (
+        set "separator=, "
+    )
+
+    set string=
+
+    if not defined %~1 (
+        set "string=%~2"
+    ) else (
+        set "string=!%~1!%separator%%~2"
+    )
+
+    endlocal & set "%~3=%string%" & goto :EOF
+
+:: Shamelessly stolen from https://stackoverflow.com/a/5841587 (jeb, 2019)
+:length (*string, *result)
+    setlocal EnableDelayedExpansion
 
     (set^ string=!%~1!)
 
@@ -45,25 +62,30 @@ goto :main
         set /a length=0
     )
 
-    @endlocal & set "%~2=%length%" & goto :EOF
+    endlocal & set "%~2=%length%" & goto :EOF
+
+:print (string)
+    <nul set /p="%~1"
+
+    goto :EOF
 
 :add (*a, *b, *result)
-    set /a %~3=(%~1 + %~2)
+    set /a "%~3=%~1 + %~2"
 
     goto :EOF
 
 :sub (*a, *b, *result)
-    set /a %~3=(%~1 - %~2)
+    set /a "%~3=%~1 - %~2"
 
     goto :EOF
 
 :mul (*a, *b, *result)
-    set /a %~3=(%~1 * %~2) / SCALE_FACTOR
+    set /a "%~3=(%~1 * %~2) / SCALE_FACTOR"
 
     goto :EOF
 
 :div (*a, *b, *result)
-    set /a %~3=(%~1 * SCALE_FACTOR) / %~2
+    set /a "%~3=(%~1 * SCALE_FACTOR) / %~2"
 
     goto :EOF
 
@@ -78,18 +100,18 @@ goto :main
     goto :EOF
 
 :abs (*number, *result)
-    @setlocal EnableDelayedExpansion
+    setlocal
 
-    set number=!%~1!
+    set /a number=%~1
 
     if %number% lss 0 (set /a result=-number) else (set /a result=number)
 
-    @endlocal & set "%~2=%result%" & goto :EOF
+    endlocal & set "%~2=%result%" & goto :EOF
 
 :clamp (*number, *result)
-    @setlocal EnableDelayedExpansion
+    setlocal
 
-    set number=!%~1!
+    set /a number=%~1
 
     if %number% gtr %SCALE_FACTOR% (
         set result=%SCALE_FACTOR%
@@ -99,20 +121,23 @@ goto :main
         set result=%number%
     )
 
-    @endlocal & set "%~2=%result%" & goto :EOF
+    endlocal & set "%~2=%result%" & goto :EOF
 
-:mod (*number, *result)
-    set /a %~2=(%~1 % SCALE_FACTOR)
+:frac (*number, *result)
+    setlocal
 
-    goto :EOF
+    set /a "result=%~1 %% SCALE_FACTOR"
+    if %result% lss 0 call :add result SCALE_FACTOR "result"
 
-:truncate (*number, *result)
-    set /a %~2=(%~1 / SCALE_FACTOR)
+    endlocal & set "%~2=%result%" & goto :EOF
+
+:trunc (*number, *result)
+    set /a "%~2=%~1 / SCALE_FACTOR"
 
     goto :EOF
 
 :sqrt (*number, *result)
-    @setlocal EnableDelayedExpansion
+    setlocal EnableDelayedExpansion
 
     set /a number=%~1
 
@@ -141,10 +166,10 @@ goto :main
 
     :sqrt_result
 
-    @endlocal & set "%~2=%guess%%imaginary%" & goto :EOF
+    endlocal & set "%~2=%guess%%imaginary%" & goto :EOF
 
 :rsqrt (*number, *result)
-    @setlocal EnableDelayedExpansion
+    setlocal
 
     set /a number=%~1
 
@@ -174,12 +199,56 @@ goto :main
         call :mul temp  guess   "guess"
     )
 
-    if defined imaginary set /a guess=-guess &:: i^2 = -i
+    if defined imaginary if %guess% gtr 0 set /a guess=-guess
 
-    @endlocal & set "%~2=%guess%%imaginary%" & goto :EOF
+    endlocal & set "%~2=%guess%%imaginary%" & goto :EOF
 
-:from_fp (*number, *result)
-    @setlocal EnableDelayedExpansion
+:to_fp (number, *result)
+    setlocal EnableDelayedExpansion
+
+    set number=%~1
+
+    set sign=!number:~0,1!
+    if not "%sign%"=="-" set sign=
+
+    if "%number:~-1%"=="%IMAGINARY_UNIT%" (
+        set real=%number:~0,-1%
+        if "!real!"=="%sign%" (
+            set number=%sign%1
+        ) else (
+            set number=!real!
+        )
+        set imaginary=%IMAGINARY_UNIT%
+    ) else (
+        set imaginary=
+    )
+
+    for /f "usebackq tokens=1,2 delims=." %%i in ('%number%.0') do (
+        set integral=%%i
+        set fractional=%%j
+    )
+
+    set fractional=!fractional:~0,%FRACTION_DIGITS%!
+
+    call :length "fractional" "length"
+    set /a padding_length=FRACTION_DIGITS - length && set padding=
+    for /l %%u in (1, 1, %padding_length%) do set padding=0!padding!
+
+    set fractional=%fractional%%padding%
+
+    :: A leading zero specifies an octal value: https://ss64.com/nt/set.html
+    set /a leading=FRACTION_DIGITS - 1
+    for /l %%u in (1, 1, %leading%) do (
+        if "!fractional:~0,1!"=="0" set fractional=!fractional:~1!
+    )
+
+    set /a result=integral * SCALE_FACTOR + %sign%fractional
+    set result=%result%%imaginary%
+
+    endlocal & set "%~2=%result%" & goto :EOF
+
+:to_string (*number, *result)
+    setlocal EnableDelayedExpansion
 
     set number=!%~1!
 
@@ -204,39 +273,7 @@ goto :main
 
     set result=%integral%.%fractional%%imaginary%
 
-    @endlocal & set "%~2=%result%" & goto :EOF
-
-:to_fp (number, *result)
-    @setlocal EnableDelayedExpansion
-
-    set number=%~1
-
-    for /f "usebackq tokens=1,2 delims=." %%i in ('%number%.0') do (
-        set integral=%%i
-        set fractional=%%j
-    )
-
-    set sign=!integral:~0,1!
-    if not "%sign%"=="-" set sign=
-
-    set fractional=!fractional:~0,%FRACTION_DIGITS%!
-    call :len "fractional" "length"
-    set /a padding_length=FRACTION_DIGITS - length & set padding=
-    for /l %%u in (1, 1, %padding_length%) do set padding=0!padding!
-    set fractional=%fractional%%padding%
-
-    set /a result=integral * SCALE_FACTOR + %sign%fractional
-
-    @endlocal & set "%~2=%result%" & goto :EOF
-
-:print (*number) #io
-    @setlocal
-
-    call :from_fp "%~1" "result"
-
-    echo:%result%
-
-    @endlocal & goto :EOF
+    endlocal & set "%~2=%result%" & goto :EOF
 
 :vector3_new (x, y, z, *vector3)
     call :to_fp "%~1" "%~4.x"
@@ -267,7 +304,7 @@ goto :main
     goto :EOF
 
 :vector3_dot (*a, *b, *result)
-    @setlocal
+    setlocal
 
     call :mul "%~1.x" "%~2.x" "vector.x"
     call :mul "%~1.y" "%~2.y" "vector.y"
@@ -276,7 +313,7 @@ goto :main
     call :add "vector.x" "vector.y" "result"
     call :add "vector.z" "result"   "result"
 
-    @endlocal & set "%~3=%result%" & goto :EOF
+    endlocal & set "%~3=%result%" & goto :EOF
 
 :vector3_mulf (*vector3, *number, *result)
     call :mul "%~1.x" "%~2" "%~3.x"
@@ -306,34 +343,67 @@ goto :main
 
     goto :EOF
 
-:vector3_truncate (*vector3, *result)
-    call :truncate "%~1.x" "%~2.x"
-    call :truncate "%~1.y" "%~2.y"
-    call :truncate "%~1.z" "%~2.z"
+:vector3_trunc (*vector3, *result)
+    call :trunc "%~1.x" "%~2.x"
+    call :trunc "%~1.y" "%~2.y"
+    call :trunc "%~1.z" "%~2.z"
 
     goto :EOF
 
 :vector3_unit (*vector3, *result)
-    @setlocal
+    setlocal
 
     call :vector3_dot "%~1" "%~1" "length_squared"
     call :rsqrt length_squared "length_reciprocal"
     call :vector3_mulf "%~1" length_reciprocal "result"
 
-    @endlocal & set "%~2=%result%" & goto :EOF
+    endlocal & set "%~2=%result%" & goto :EOF
 
-:vector3_print (*vector3) #io
-    @setlocal EnableDelayedExpansion
+:vector3_to_string (*vector3, *string)
+    setlocal
 
-    call :from_fp "%~1.x" "x"
-    call :from_fp "%~1.y" "y"
-    call :from_fp "%~1.z" "z"
+    call :to_string "%~1.x" "x"
+    call :to_string "%~1.y" "y"
+    call :to_string "%~1.z" "z"
 
-    echo:[%x%, %y%, %z%]
+    set result=[%x%, %y%, %z%]
 
-    @endlocal & goto :EOF
+    endlocal & set "%~2=%result%" & goto :EOF
 
-:sphere_intersect (@TODO)
+:ray_new (*origin, *direction, *ray)
+    set %~3.origin=%~1
+    set %~3.direction=%~2
+
+    goto :EOF
+
+:ray_at (*ray, *parameter, *result)
+    set origin=!%~1.origin!
+    set direction=!%~1.direction!
+
+    call :vector3_mulf %~2 direction "temp"
+    call :vector3_add temp origin "result"
+    goto :EOF
+
+:sphere_intersect (*ray_origin, *ray_direction, hit_t, *hit_point, *hit_normal)
+    setlocal
+
+    :: from global? sphere_center sphere_radius
+
+    set ray_origin=%~1
+
+    call :vector3_sub ray_origin sphere_center "off_center"
+
+    call :vector3_dot ray_direction ray_direction "a"
+    call :vector3_dot ray_direction off_center "half_b"
+    call :vector3_dot off_center off_center "off_center_squared"
+    call :mul sphere_radius sphere_radius "sphere_radius_squared"
+    call :sub off_center_squared sphere_radius_squared "c"
+
+
+
+
+
+    endlocal & goto :EOF
 
 :plane_intersect (@TODO)
 
@@ -344,75 +414,169 @@ goto :main
 :trace (@TODO *ray_origin, *ray_direction, depth, *color)
 
 :error (message) #io
-    >&2 echo:%~1
+    >&2 echo:%PROGRAM%: error: %~1
 
     goto :EOF
 
-:init_constants ()
-    set /a SCALE_FACTOR=1000
-    call :len SCALE_FACTOR "FRACTION_DIGITS"
-    set /a FRACTION_DIGITS-=1
-
-    set /a NEWTON_RAPHSON_ITERATIONS=5
-    set IMAGINARY_UNIT=i
-
-    call :to_fp 1.5 THREE_HALVES
-    call :to_fp 2   TWO
+:log (message) #io
+    echo:[%DATE% %TIME%] %~1
 
     goto :EOF
 
-:: Loosely inspired by https://stackoverflow.com/a/8162578
-:parse (args...)
-    set "OPTIONS=--width:%DEFAULT_WIDTH% --height:%DEFAULT_HEIGHT%"
-    set "OPTIONS=%OPTIONS% --processes:%DEFAULT_PROCESSES% --worker-index:"""
-    set "OPTIONS=%OPTIONS% -h: --help: -?: --version:"
+:match (pattern, delimiters, !command, *result) -> errorlevel
+    setlocal
 
-    for %%o in (%OPTIONS%) do for /f "tokens=1,* delims=:" %%i in ("%%o") do set "%%i=%%~j"
+    set match=
 
+    for /f "usebackq tokens=1,* delims=%~2" %%i in (`%~3`) do (
+        if "%~1"=="%%i" set match=%%j
+    )
+
+    if not "%match%"=="" (set /a code=0) else (set /a code=1)
+
+    endlocal & set "%~4=%match%" & exit /b %code%
+
+:: Loosely based on https://stackoverflow.com/a/8162578 (dbenham, 2011)
+:parse (args...) #global
+    :: Limitation: those are kept globally (used in help message)
+    set /a DEFAULT_WIDTH=256
+    set /a DEFAULT_HEIGHT=256
+    set /a DEFAULT_PROCESSES=2
+
+    :: Format: <name>:<type:(f)lag|(s)tring option|(n)umeric option>[:<default>]
+    set "options=-h:f --help:f --version:f -t:f --test:f"
+    set "options=%options% --width:n:%DEFAULT_WIDTH%"
+    set "options=%options% --height:n:%DEFAULT_HEIGHT%"
+    set "options=%options% --processes:n:%DEFAULT_PROCESSES%"
+    set "options=%options% --worker-index:s:"""
+
+    :: Warning: option keys are implicitly case insensitive! To get around this,
+    :: we set metavariables here for later comparison in match().
+    ::
+    :: This could be enhanced further by placing help strings in metavariables,
+    :: but then some options would be duplicated (e.g. '-h' and '--help'). TBD
+    for %%o in (%options%) do for /f "tokens=1,2,* delims=:" %%i in ("%%o") do (
+        if not "%%k"=="" (set ":%%i=option:%%~j") else (set ":%%i=flag")
+
+        set "%%i=%%~k"
+    )
+
+    set options=
+    set INVALID=
     set UNRECOGNIZED=
 
-    :parse_loop
+    :parse_args
         if not "%~1"=="" (
-            set "test=!OPTIONS:*%~1:=! "
+            call :match ":%~1" "=" "set :-" match
 
-            if "!test!"=="!OPTIONS! " (
-                if defined UNRECOGNIZED (
-                    set "UNRECOGNIZED=%UNRECOGNIZED% %~1"
+            if "!match:~0,6!"=="option" (
+                set "value=%~2"
+
+                if "!value:~0,1!"=="-" (
+                    call :append INVALID "%~1[=NULL]" INVALID
+                ) else if "!match:~7,8!"=="s" (
+                    set "%~1=!value!"
+                ) else if "!match:~7,8!"=="n" (
+                    set /a "number=value" 2>nul && (
+                        if not "!number!"=="0" (set "%~1=!number!") else (call)
+                    ) || (
+                        if "!value!"=="" set value=NULL
+                        call :append INVALID "%~1[=!value!]" INVALID
+                    )
                 ) else (
-                    set "UNRECOGNIZED=%~1"
+                    @rem I guess we've summoned an entity from the void itself.
+                    call :error "unspecified parser error on token: !value!"
+                    call :append INVALID "%~1[=?]" INVALID
                 )
-            ) else if "!test:~0,1!"==" " (
+
+                if not "!value:~0,1!"=="-" shift /1
+
+                set value=
+            ) else if "!match!"=="flag" (
                 set "%~1=true"
             ) else (
-                set "%~1=%~2"
-                shift /1
+                call :append UNRECOGNIZED "%~1" UNRECOGNIZED " "
             )
 
+            set match=
             shift /1
-            goto :parse_loop
+            goto :parse_args
         )
-
-        set test=
-
-    set OPTIONS=
-
-    goto :EOF
-
-:parse_parameters_as_ints ()
-    set /a "IMAGE_WIDTH=%--width%"   2>nul || set /a IMAGE_WIDTH=DEFAULT_WIDTH
-    set /a "IMAGE_HEIGHT=%--height%" 2>nul || set /a IMAGE_HEIGHT=DEFAULT_HEIGHT
-    set /a "PROCESSES=%--processes%" 2>nul || set /a PROCESSES=DEFAULT_PROCESSES
 
     goto :EOF
 
 :temporary_directory (*directory)
-    @setlocal
+    setlocal
 
     set temporary=%TEMP%
     if "%temporary%"=="" set temporary=.
     for %%i in ("%temporary%") do set temporary=%%~fi
 
-    @endlocal & set "%~1=%temporary%" & goto :EOF
+    endlocal & set "%~1=%temporary%" & goto :EOF
+
+:setup_colors () #global
+    setlocal
+
+    for /f "usebackq" %%c in (`echo prompt $E ^| cmd 2^>nul`) do set esc=%%c
+
+    ver | find "Version 10.0" >nul 2>&1 && (
+        set RED=%esc%[31m
+        set GREEN=%esc%[32m
+        set RESET=%esc%[0m
+    ) || (
+        set RED=
+        set GREEN=
+        set RESET=
+    )
+
+    endlocal & set "RED=%RED%" & set "GREEN=%GREEN%" & set "RESET=%RESET%" & goto :EOF
+
+:test (*function (*number, *result), value, expected) -> errorlevel
+    setlocal EnableDelayedExpansion
+
+    call :to_fp %~2 "number"
+    call :%~1 "number" "result"
+
+    call :to_fp %~3 "number"
+    if not "%number%"=="%result%" (
+        set expected=%~3
+        call :to_string "result" "actual"
+
+        call :log "%~1(%~2): !actual! should be exactly !expected!"
+        set /a code=1
+    ) else (
+        set /a code=0
+    )
+
+    endlocal & exit /b %code%
+
+:test_runner
+    call :setup_colors
+
+    set /a total=passed=failed=0
+
+    for /f "usebackq tokens=* delims=:" %%y in (`findstr /b ":::" "%~f0"`) do (
+        call :test %%y && set /a passed+=1 || set /a failed+=1 & set /a total+=1
+    )
+
+    set summary=
+
+    if %total% neq 0 (
+        set summary=%passed% passed, %failed% failed
+
+        if %failed% equ 0 (
+            set result=%GREEN%OK%RESET%
+        ) else (
+            set result=%RED%FAILED%RESET%
+        )
+    ) else (
+        set result=N/A
+    )
+
+    >&2 echo:
+    >&2 echo:Test result: %result%. %summary%
+
+    exit /b -%failed%
 
 :version
     echo:%VERSION%
@@ -422,66 +586,84 @@ goto :main
 :usage
     echo:Usage: %PROGRAM% [options...]
     echo:
-    echo:    Does things, and then some other things.
+    echo:    Runs a ray tracer with the specified parameters.
     echo:
     echo:    Optional arguments:
-    echo:      --width NUM       result image width (default: %DEFAULT_WIDTH%)
-    echo:      --height NUM      result image height (default: %DEFAULT_HEIGHT%)
-    echo:      --processes NUM   number of worker processes (default: %DEFAULT_PROCESSES%)
-    echo:      -h, --help, -?    show this help message and exit
+    echo:      --width=NUM       result image width (default: %DEFAULT_WIDTH%)
+    echo:      --height=NUM      result image height (default: %DEFAULT_HEIGHT%)
+    echo:      --processes=NUM   number of worker processes (default: %DEFAULT_PROCESSES%)
+    echo:      -t, --test        execute a primitive test runner
+    echo:      -h, --help        show this help message and exit
     echo:      --version         output version information and exit
     echo:
     echo:    Exit status:
     echo:      0                 successful program execution
     echo:      1                 this dialog was displayed
-    echo:      2                 parse error
+    echo:      2                 incorrect command line usage
+    echo:
+    echo:Example: %PROGRAM% ^>image.ppm --width=128 --height=128 --processes=1
 
     exit /b 1
 
-:unrecognized
-    call :error "%PROGRAM%: error: unrecognized arguments: %UNRECOGNIZED%"
-    call :error "Try '%PROGRAM% --help' for more information."
+:usage_error
+    if defined INVALID      call :error "invalid values for options: %INVALID%"
+    if defined UNRECOGNIZED call :error "unrecognized arguments: %UNRECOGNIZED%"
+    >&2 echo:Try '%PROGRAM% --help' for more information.
 
     exit /b 2
 
 :main
     call :parse %*
-    if defined UNRECOGNIZED goto :unrecognized
 
-    if defined -h           goto :usage
+    :: Eager options.
     if defined --help       goto :usage
-    if defined -?           goto :usage
+    if defined -h           goto :usage
     if defined --version    goto :version
 
-    call :init_constants
-    call :parse_parameters_as_ints
+    if not "%INVALID%%UNRECOGNIZED%"=="" goto :usage_error
 
-    :: random debugging stuff
+    :: Initialize math constants
 
-    call :vector3_new 1 2 3 "a"
-    call :vector3_new 1 2 3 "b"
+        set /a SCALE_FACTOR=1000
+        call :length SCALE_FACTOR FRACTION_DIGITS
+        set /a FRACTION_DIGITS-=1
 
-    call :vector3_new 1.5 2.5 3.5 "q"
-    call :vector3_print q
+        set IMAGINARY_UNIT=i
+        set /a NEWTON_RAPHSON_ITERATIONS=5
 
-    call :vector3_dot a b "result"
-    call :print result
+        call :to_fp 1.5 THREE_HALVES
+        call :to_fp 2   TWO
 
-    call :vector3_add a b "c"
-    call :vector3_add c c "c"
-    call :vector3_add c c "c"
-    call :vector3_print "c"
+        call :to_fp -1  MINUS_ONE
 
-    call :to_fp 2 "x"
-    call :sqrt "x" "result"
-    call :print result
+    if defined --test       goto :test_runner
+    if defined -t           goto :test_runner
 
-    call :to_fp 3 "x"
-    call :sqrt "x" "result"
-    call :print result
+    :: TODO: actual ray tracing
 
-    call :to_fp 123 "x"
-    call :sqrt "x" "result"
-    call :print result
+@endlocal & @exit /b 0
 
-@endlocal
+:: Test suite, Rust-style (picked up by the test runner automatically)
+::
+::  function   argument    expected
+::
+::: abs        0           0
+::: abs        1           1
+::: abs        -1          1
+::: clamp      0           0
+::: clamp      0.5         0.5
+::: clamp      1           1
+::: clamp      2           1
+::: clamp      -1          0
+::: frac       0           0
+::: frac       1.5         0.5
+::: frac       -2.7        0.3
+::: trunc      1           0.001
+::: sqrt       2           1.414
+::: sqrt       3.4         1.843
+::: sqrt       255         15.978
+::: sqrt       -1          i
+::: rsqrt      2           0.707
+::: rsqrt      3.4         0.543
+::: rsqrt      255         0.045
+::: rsqrt      -1          -i

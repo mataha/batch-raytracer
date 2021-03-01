@@ -3,3 +3,4 @@
 *.cmd text eol=crlf
 
 .gitattributes export-ignore
+.gitignore     export-ignore
