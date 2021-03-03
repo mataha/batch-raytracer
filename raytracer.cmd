@@ -1,6 +1,6 @@
 @if "%DEBUG%"=="" @echo off
 ::
-:: Copyright (C) 2021  mataha <mataha@users.noreply.github.com>
+:: Copyright (C) 2021  mataha
 ::
 :: This program is free software: you can redistribute it and/or modify
 :: it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 @set PROGRAM=%~n0
 @set VERSION=0.0.1-SNAPSHOT
 
-@for /f "usebackq" %%c in (`@copy /z "%~f0" nul`) do @set CR=%%c
 @goto :main
 
 
@@ -63,11 +62,6 @@
     )
 
     endlocal & set "%~2=%length%" & goto :EOF
-
-:print (string)
-    <nul set /p="%~1"
-
-    goto :EOF
 
 :add (*a, *b, *result)
     set /a "%~3=%~1 + %~2"
@@ -114,11 +108,11 @@
     set /a number=%~1
 
     if %number% gtr %SCALE_FACTOR% (
-        set result=%SCALE_FACTOR%
+        set /a result=SCALE_FACTOR
     ) else if %number% lss 0 (
-        set result=0
+        set /a result=0
     ) else (
-        set result=%number%
+        set /a result=number
     )
 
     endlocal & set "%~2=%result%" & goto :EOF
@@ -137,9 +131,11 @@
     goto :EOF
 
 :sqrt (*number, *result)
-    setlocal EnableDelayedExpansion
+    setlocal
 
-    set /a number=%~1
+    set /a number=%~1 2>nul
+
+    if %number% equ 0 endlocal & set "%~2=0" & goto :EOF
 
     if %number% lss 0 (
         call :abs number "number"
@@ -158,13 +154,10 @@
     call :div2 number "guess"
 
     for /l %%u in (1, 1, %NEWTON_RAPHSON_ITERATIONS%) do (
-        if !guess! equ 0 goto :sqrt_result
         call :div  number guess "temp"
         call :add  temp   guess "temp"
-        call :div2 temp  "guess"
+        call :div2 temp         "guess"
     )
-
-    :sqrt_result
 
     endlocal & set "%~2=%guess%%imaginary%" & goto :EOF
 
@@ -193,10 +186,10 @@
     call :div TWO number "guess"
 
     for /l %%u in (1, 1, %NEWTON_RAPHSON_ITERATIONS%) do (
-        call :mul guess guess   "temp"
-        call :mul temp  divided "temp"
-        call :sub THREE_HALVES temp "temp"
-        call :mul temp  guess   "guess"
+        call :mul guess        guess   "temp"
+        call :mul temp         divided "temp"
+        call :sub THREE_HALVES temp    "temp"
+        call :mul temp         guess   "guess"
     )
 
     if defined imaginary if %guess% gtr 0 set /a guess=-guess
@@ -230,7 +223,7 @@
 
     set fractional=!fractional:~0,%FRACTION_DIGITS%!
 
-    call :length "fractional" "length"
+    call :length fractional "length"
     set /a padding_length=FRACTION_DIGITS - length && set padding=
     for /l %%u in (1, 1, %padding_length%) do set padding=0!padding!
 
@@ -243,9 +236,8 @@
     )
 
     set /a result=integral * SCALE_FACTOR + %sign%fractional
-    set result=%result%%imaginary%
 
-    endlocal & set "%~2=%result%" & goto :EOF
+    endlocal & set "%~2=%result%%imaginary%" & goto :EOF
 
 :to_string (*number, *result)
     setlocal EnableDelayedExpansion
@@ -271,9 +263,9 @@
 
     set fractional=!number:~-%FRACTION_DIGITS%!
 
-    set result=%integral%.%fractional%%imaginary%
+    set result=%integral%.%fractional%
 
-    endlocal & set "%~2=%result%" & goto :EOF
+    endlocal & set "%~2=%result%%imaginary%" & goto :EOF
 
 :vector3_new (x, y, z, *vector3)
     call :to_fp "%~1" "%~4.x"
@@ -310,8 +302,8 @@
     call :mul "%~1.y" "%~2.y" "vector.y"
     call :mul "%~1.z" "%~2.z" "vector.z"
 
-    call :add "vector.x" "vector.y" "result"
-    call :add "vector.z" "result"   "result"
+    call :add vector.x vector.y "result"
+    call :add vector.z result   "result"
 
     endlocal & set "%~3=%result%" & goto :EOF
 
@@ -357,7 +349,12 @@
     call :rsqrt length_squared "length_reciprocal"
     call :vector3_mulf "%~1" length_reciprocal "result"
 
-    endlocal & set "%~2=%result%" & goto :EOF
+    :: Crude. Could this be abstracted further?
+    set set_x=set "%~2.x=%result.x%"
+    set set_y=set "%~2.y=%result.y%"
+    set set_z=set "%~2.z=%result.z%"
+
+    endlocal & %set_x% & %set_y% & %set_z% & goto :EOF
 
 :vector3_to_string (*vector3, *string)
     setlocal
@@ -384,8 +381,8 @@
     call :vector3_add temp origin "result"
     goto :EOF
 
-:sphere_intersect (*ray_origin, *ray_direction, hit_t, *hit_point, *hit_normal)
-    setlocal
+:hit_sphere (*ray_origin, *ray_direction, hit_t, *hit_point, *hit_normal)
+    setlocal EnableDelayedExpansion
 
     :: from global? sphere_center sphere_radius
 
@@ -399,7 +396,32 @@
     call :mul sphere_radius sphere_radius "sphere_radius_squared"
     call :sub off_center_squared sphere_radius_squared "c"
 
+    call :mul half_b half_b half_b_squared
+    call :mul a c ac
+    call :sub half_b_squared ac discriminant
 
+    if %discriminant% gtr 0 (
+        call :sqrt discriminant root
+        call :sub 0 half_b minus_half_b
+
+        call :sub minus_half_b root t1
+        call :div t1 a t1
+
+        if !t1! gtr 0 (
+            call :vector3_mulf ray_direction t1 t
+            call :vector3_add ray_origin t hit_point
+            call :vector3_sub hit_point sphere_center normal
+            call :vector3_divf normal sphere_radius hit_normal
+
+            
+        )
+
+
+    ) else (
+
+
+
+    )
 
 
 
@@ -437,11 +459,14 @@
     endlocal & set "%~4=%match%" & exit /b %code%
 
 :: Loosely based on https://stackoverflow.com/a/8162578 (dbenham, 2011)
-:parse (args...) #global
+:parse (args...) -> errorlevel #global
+    set meta=:
+    set prefix=-
+
     :: Limitation: those are kept globally (used in help message)
     set /a DEFAULT_WIDTH=256
     set /a DEFAULT_HEIGHT=256
-    set /a DEFAULT_PROCESSES=2
+    set /a DEFAULT_PROCESSES=1
 
     :: Format: <name>:<type:(f)lag|(s)tring option|(n)umeric option>[:<default>]
     set "options=-h:f --help:f --version:f -t:f --test:f"
@@ -456,24 +481,27 @@
     :: This could be enhanced further by placing help strings in metavariables,
     :: but then some options would be duplicated (e.g. '-h' and '--help'). TBD
     for %%o in (%options%) do for /f "tokens=1,2,* delims=:" %%i in ("%%o") do (
-        if not "%%k"=="" (set ":%%i=option:%%~j") else (set ":%%i=flag")
+        if not "%%j"=="f" (
+            set "%meta%%%i=option:%%~j"
+        ) else (
+            set "%meta%%%i=flag"
+        )
 
         set "%%i=%%~k"
     )
 
-    set options=
     set INVALID=
     set UNRECOGNIZED=
 
     :parse_args
         if not "%~1"=="" (
-            call :match ":%~1" "=" "set :-" match
+            call :match "%meta%%~1" "=" "set %meta%%prefix%" "match"
 
             if "!match:~0,6!"=="option" (
                 set "value=%~2"
 
-                if "!value:~0,1!"=="-" (
-                    call :append INVALID "%~1[=NULL]" INVALID
+                if "!value:~0,1!"=="%prefix%" (
+                    call :append INVALID "%~1[=NULL]" "INVALID"
                 ) else if "!match:~7,8!"=="s" (
                     set "%~1=!value!"
                 ) else if "!match:~7,8!"=="n" (
@@ -481,21 +509,21 @@
                         if not "!number!"=="0" (set "%~1=!number!") else (call)
                     ) || (
                         if "!value!"=="" set value=NULL
-                        call :append INVALID "%~1[=!value!]" INVALID
+                        call :append INVALID "%~1[=!value!]" "INVALID"
                     )
                 ) else (
                     @rem I guess we've summoned an entity from the void itself.
                     call :error "unspecified parser error on token: !value!"
-                    call :append INVALID "%~1[=?]" INVALID
+                    call :append INVALID "%~1[=?]" "INVALID"
                 )
 
-                if not "!value:~0,1!"=="-" shift /1
+                if not "!value:~0,1!"=="%prefix%" shift /1
 
                 set value=
             ) else if "!match!"=="flag" (
                 set "%~1=true"
             ) else (
-                call :append UNRECOGNIZED "%~1" UNRECOGNIZED " "
+                call :append UNRECOGNIZED "%~1" "UNRECOGNIZED" " "
             )
 
             set match=
@@ -503,20 +531,61 @@
             goto :parse_args
         )
 
+    if "%INVALID%%UNRECOGNIZED%"=="" (set /a code=0) else (set /a code=1)
+
+    for /f "tokens=1,* delims==" %%m in ('set %meta%%prefix%') do set %%m=
+    set "code=" & set "meta=" & set "prefix=" & set "options=" & exit /b %code%
+
+:progress_bar_initialize (*progress_bar, width, text)
+    call :abs "%~2" "%~1.width"
+    set %~1.text=%~3
+
     goto :EOF
 
-:temporary_directory (*directory)
-    setlocal
+:progress_bar_display (*progress_bar, remaining, total) #io
+    setlocal EnableDelayedExpansion
 
-    set temporary=%TEMP%
-    if "%temporary%"=="" set temporary=.
-    for %%i in ("%temporary%") do set temporary=%%~fi
+    :: Yes, these have to be bound, as we're calling length() on them later
+    set /a remaining=%~2
+    set /a total=%~3
 
-    endlocal & set "%~1=%temporary%" & goto :EOF
+    set /a done=((total - remaining) * %~1.width) / total
+    set /a rest=%~1.width - done
+
+    set bar=
+    for /l %%u in (1, 1, %done%) do set "bar=!bar!="
+    for /l %%u in (1, 1, %rest%) do set "bar=!bar! "
+
+    set "text=" & if not "!%~1.text!"=="" (
+        call :length total     "counter_width"
+        call :length remaining "characters"
+        set /a padding_length=counter_width - characters
+
+        set counter=!remaining!
+        for /l %%u in (1, 1, !padding_length!) do set counter= !counter!
+
+        set text=!%~1.text!: !counter!
+    )
+
+    >con <nul set /p="[%bar%] %text%!CR!"
+
+    endlocal & goto :EOF
+
+:progress_bar_finalize (*progress_bar) #io
+    >con <nul echo:
+
+    set %~1.width=
+    set %~1.text=
+
+    goto :EOF
+
+:setup () #global
+    call :setup_colors
+    call :setup_tui
+
+    goto :EOF
 
 :setup_colors () #global
-    setlocal
-
     for /f "usebackq" %%c in (`echo prompt $E ^| cmd 2^>nul`) do set esc=%%c
 
     ver | find "Version 10.0" >nul 2>&1 && (
@@ -529,20 +598,25 @@
         set RESET=
     )
 
-    endlocal & set "RED=%RED%" & set "GREEN=%GREEN%" & set "RESET=%RESET%" & goto :EOF
+    set "esc=" & goto :EOF
+
+:setup_tui () #global
+    for /f "usebackq" %%c in (`copy /z "%~f0" nul 2^>nul`) do set CR=%%c
+
+    goto :EOF
 
 :test (*function (*number, *result), value, expected) -> errorlevel
     setlocal EnableDelayedExpansion
 
     call :to_fp %~2 "number"
-    call :%~1 "number" "result"
+    call :%~1 number "result"
 
     call :to_fp %~3 "number"
     if not "%number%"=="%result%" (
         set expected=%~3
-        call :to_string "result" "actual"
-
+        call :to_string result "actual"
         call :log "%~1(%~2): !actual! should be exactly !expected!"
+
         set /a code=1
     ) else (
         set /a code=0
@@ -551,15 +625,14 @@
     endlocal & exit /b %code%
 
 :test_runner
-    call :setup_colors
-
-    set /a total=passed=failed=0
+    set /a passed=failed=0
 
     for /f "usebackq tokens=* delims=:" %%y in (`findstr /b ":::" "%~f0"`) do (
-        call :test %%y && set /a passed+=1 || set /a failed+=1 & set /a total+=1
+        if not "%%~y"=="" call :test %%y && set /a passed+=1 || set /a failed+=1
     )
 
     set summary=
+    set /a total=passed + failed
 
     if %total% neq 0 (
         set summary=%passed% passed, %failed% failed
@@ -613,57 +686,100 @@
     exit /b 2
 
 :main
-    call :parse %*
+    call :parse %* || goto :usage_error
 
-    :: Eager options.
-    if defined --help       goto :usage
-    if defined -h           goto :usage
-    if defined --version    goto :version
+    if defined --help    goto :usage
+    if defined -h        goto :usage
+    if defined --version goto :version
 
-    if not "%INVALID%%UNRECOGNIZED%"=="" goto :usage_error
+        :: Setup module machinery
+        call :setup
 
-    :: Initialize math constants
-
+        :: Setup math machinery
         set /a SCALE_FACTOR=1000
         call :length SCALE_FACTOR FRACTION_DIGITS
         set /a FRACTION_DIGITS-=1
 
-        set IMAGINARY_UNIT=i
         set /a NEWTON_RAPHSON_ITERATIONS=5
+        set IMAGINARY_UNIT=i
 
+        :: Initialize math constants
         call :to_fp 1.5 THREE_HALVES
         call :to_fp 2   TWO
 
         call :to_fp -1  MINUS_ONE
 
-    if defined --test       goto :test_runner
-    if defined -t           goto :test_runner
+    if defined --test    goto :test_runner
+    if defined -t        goto :test_runner
 
     :: TODO: actual ray tracing
 
+    echo:P3
+    echo:%--width% %--height%
+    echo:255
+
+    call :to_fp 255.999 RGB_SCALING
+
+    call :vector3_new 1 2 3 vector
+    call :vector3_unit vector unit
+    call :vector3_to_string unit string
+
+    echo:%string%
+
+    goto :EOF
+
+    call :progress_bar_initialize progress_bar 28 "Scanlines remaining"
+
+    set /a WIDTH=%--width% - 1
+    call :to_fp %WIDTH% width_fp
+    set /a HEIGHT=%--height% - 1
+    call :to_fp %HEIGHT% height_fp
+
+    call :vector3_new 0 0 0 origin
+
+    for /l %%j in (%HEIGHT%, -1, 0) do (
+        call :progress_bar_display progress_bar %%j HEIGHT
+        for /l %%i in (0, 1, %WIDTH%) do (
+            call :to_fp %%i x
+            call :div x width_fp color.x
+
+            call :to_fp %%j y
+            call :div y height_fp color.y
+
+            call :to_fp 0.25 color.z
+
+            call :vector3_mulf color RGB_SCALING color
+            call :vector3_trunc color color
+
+            echo:!color.x! !color.y! !color.z!
+        )
+    )
+
+    call :progress_bar_finalize progress_bar
+
 @endlocal & @exit /b 0
 
-:: Test suite, Rust-style (picked up by the test runner automatically)
+:: Rust-style test suite (picked up by the test runner automatically)
 ::
-::  function   argument    expected
+::  function   argument        expected
 ::
-::: abs        0           0
-::: abs        1           1
-::: abs        -1          1
-::: clamp      0           0
-::: clamp      0.5         0.5
-::: clamp      1           1
-::: clamp      2           1
-::: clamp      -1          0
-::: frac       0           0
-::: frac       1.5         0.5
-::: frac       -2.7        0.3
-::: trunc      1           0.001
-::: sqrt       2           1.414
-::: sqrt       3.4         1.843
-::: sqrt       255         15.978
-::: sqrt       -1          i
-::: rsqrt      2           0.707
-::: rsqrt      3.4         0.543
-::: rsqrt      255         0.045
-::: rsqrt      -1          -i
+::: abs        0               0
+::: abs        1               1
+::: abs        -1              1
+::: clamp      0               0
+::: clamp      0.5             0.5
+::: clamp      1               1
+::: clamp      2               1
+::: clamp      -1              0
+::: frac       0               0
+::: frac       1.5             0.5
+::: frac       -2.7            0.3
+::: sqrt       0               0
+::: sqrt       2               1.414
+::: sqrt       3               1.732
+::: sqrt       255             15.978
+::: sqrt       -1              i
+::: rsqrt      2               0.707
+::: rsqrt      255             0.045
+::: rsqrt      -1              -i
+::: trunc      !SCALE_FACTOR!  1
